@@ -400,9 +400,6 @@ DeviceNetworkEvents
 | 9    | C2 Connection Destination            | Command and Control                 | Application Layer Protocol                      | T1071           | -                   |
 | 10   | Exfiltration Attempt (`curl` to 185.92.220.87:8081) | Exfiltration                | Exfiltration Over Alternative Protocol          | T1048           | T1048.003 (Unencrypted/Non-C2 Protocol) |
 
-**Notes:**  
-- Some flags map to multiple techniques depending on the observed behavior.  
-- Mapping is derived directly from the threat hunt findings.
 
 [Back to top](#top)
 
