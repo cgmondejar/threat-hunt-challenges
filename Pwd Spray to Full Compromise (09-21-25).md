@@ -74,7 +74,6 @@ This hypothesis will be validated or refuted through KQL-based hunting across De
 
 ---
 
-<a id="flag-1-identify-the-fake-antivirus-program-name"></a>
 ## 🎯 Flag-by-Flag Findings
 
 <a id="flag1"></a>
