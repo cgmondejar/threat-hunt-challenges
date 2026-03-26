@@ -1,5 +1,6 @@
 <a id="top"></a>
 # 🕵️ Pwd Spray to Full Compromise - Threat Hunt
+***Analyst:*** Chris Mondejar
 
 ## 🌟 Table of Contents 🌟
 
@@ -44,6 +45,8 @@ This attack demonstrates a full intrusion lifecycle:
 ### Tools Used
 - Advanced Hunting (KQL) in Microsoft Defender for Endpoint
 - Microsoft Sentinel
+
+
 
   
 [Back to top](#top)
@@ -94,7 +97,7 @@ This hypothesis will be validated or refuted through KQL-based hunting across De
 
 **KQL Query Used:**
 
-```
+```kql
 DeviceLogonEvents
 | where TimeGenerated > (datetime("2025-09-13))
 | where DeviceName contains "flare"
@@ -122,7 +125,7 @@ DeviceLogonEvents
 
 **KQL Query Used:**
 
-```
+```kql
 DeviceLogonEvents
 | where TimeGenerated > (datetime("2025-09-16))
 | where DeviceName contains "flare"
@@ -150,7 +153,7 @@ DeviceLogonEvents
 
 **KQL Query Used:**
 
-```
+```kql
 DeviceProcessEvents
 | where TimeGenerated > (datetime("2025-09-16))
 | where DeviceName contains "flare"
@@ -177,7 +180,7 @@ DeviceProcessEvents
 
 **KQL Query Used:**
 
-```
+```kql
 DeviceProcessEvents
 | where TimeGenerated > (datetime("2025-09-16))
 | where DeviceName contains "flare"
@@ -204,7 +207,7 @@ DeviceProcessEvents
 
 **KQL Query Used:**
 
-```
+```kql
 DeviceEvents
 | where TimeGenerated > todatetime('2025-09-16T19:38:40.063299Z')
 | where DeviceName contains "flare"
@@ -231,7 +234,7 @@ DeviceEvents
 
 **KQL Query Used:**
 
-```
+```kql
 DeviceRegistryEvents
 | where TimeGenerated > todatetime('2025-09-16T19:38:40.063299Z')
 | where DeviceName contains "flare"
@@ -259,7 +262,7 @@ DeviceRegistryEvents
 
 **KQL Query Used:**
 
-```
+```kql
 DeviceProcessEvents
 | where TimeGenerated > todatetime('2025-09-16T19:38:40.063299Z')
 | where DeviceName contains "flare"
@@ -287,7 +290,7 @@ DeviceProcessEvents
 
 **KQL Query Used:**
 
-```
+```kql
 DeviceFileEvents
 | where TimeGenerated > todatetime('2025-09-16T19:38:40.063299Z')
 | where DeviceName contains "flare"
@@ -316,7 +319,7 @@ DeviceFileEvents
 
 **KQL Query Used:**
 
-```
+```kql
 DeviceNetworkEvents
 | where TimeGenerated > todatetime('2025-09-16T19:38:40.063299Z')
 | where DeviceName contains "flare"
@@ -342,7 +345,7 @@ DeviceNetworkEvents
 
 **KQL Query Used:**
 
-```
+```kql
 DeviceNetworkEvents
 | where TimeGenerated > todatetime('2025-09-16T19:38:40.063299Z')
 | where DeviceName contains "flare"
