@@ -1,8 +1,9 @@
+<a id="top"></a>
 # 🕵️ The Cyber Range - The Great Admin Heist CTF
 
 ## 🌟 Table of Contents 🌟
 
-- [🚀 Executive Summary](#executive-summary)
+- [🌍 Executive Summary](#executive-summary)
 - [🎯 Mission](#mission)
 - [🚩 Flag 1: Identify the Fake Antivirus Program Name](#flag-1-identify-the-fake-antivirus-program-name)
 - [🚩 Flag 2: Malicious File Written Somewhere](#flag-2-malicious-file-written-somewhere)
@@ -21,7 +22,6 @@
 <a id="executive-summary"></a>
 ## 🌍 **Executive Summary**
 
-
 On **14 September 2025**, suspicious RDP login activity was observed on a cloud-hosted Windows VM.  
 
 Following a brute-force campaign, the adversary gained RDP access using the **slflare** account. They then:
@@ -37,6 +37,8 @@ Following a brute-force campaign, the adversary gained RDP access using the **sl
 This attack demonstrates a full intrusion lifecycle:
 
 **Initial Access** → **Execution** → **Persistence** → **Defense Evasion** → **Discovery** → **Collection** → **C2** → **Exfiltration**
+
+[Back to top](#top)
 
 <a id="mission"></a>
 ## 🎯 Mission
