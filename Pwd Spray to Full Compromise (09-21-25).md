@@ -8,9 +8,9 @@
 - [📅 Timeline of Events](#timeline-of-events)
 - [🚩 Flag 1 — Attacker IP Address](#flag1)
 - [🚩 Flag 2 — Compromised Account](#flag2)
-- [🚩 Flag 3: Execution of the Program](#flag-3-execution-of-the-program)
-- [🚩 Flag 4 - Keylogger Artifact Written](#flag-4---keylogger-artifact-written)
-- [🚩 Flag 5 - Registry Persistence Entry](#flag-5---registry-persistence-entry)
+- [🚩 Flag 3 — Executed Binary](#flag3)
+- [🚩 Flag 4 — Command Line Used](#flag4)
+- [🚩 Flag 5 — Persistence Mechanism](#flag5)
 - [🚩 Flag 6 - Daily Scheduled Task Created](#flag-6---daily-scheduled-task-created)
 - [🚩 Flag 7 - Process Spawn Chain](#flag-7---process-spawn-chain)
 - [🚩 Flag 8 - Timestamp Correlation](#flag-8---timestamp-correlation)
@@ -78,8 +78,6 @@ This hypothesis will be validated or refuted through KQL-based hunting across De
 
 <a id="flag1"></a>
 ### 🚩 Flag 1 — Attacker IP Address
-MITRE Technique: T1110.001 – Brute Force: Password Guessing
-
 - **Objective:** Identify the external IP that successfully logged in via RDP after repeated failures.  
 - **Finding:** Attacker IP `159.26.106.84`.  
 - **Evidence:** Multiple brute-force attempts observed from the same external IP starting 13 September 2025, with successful login at 2025-09-16T18:40:57.3785102Z on DeviceName containing “flare”.  
@@ -133,127 +131,84 @@ DeviceLogonEvents
 
 ---
 
-<a id="flag-3-execution-of-the-program"></a>
-# 🚩 Flag 3: Execution of the Program
+<a id="flag3"></a>
 
-**Objective:**
-Verify whether the dropped malicious file was manually executed by the user or attacker.
-
-**What to Hunt:**
-Search for process execution events tied to the suspicious binary.
-
-**Hint:**
-1. Bubba clicked the .exe file himself.
-
-<img src="https://i.imgur.com/PjcYPQp.png">
+### 🚩 Flag 3 — Executed Binary
+- **Objective:** Identify the binary executed after login.  
+- **Finding:** `msupdate.exe`.  
+- **Evidence:** Suspicious executable created and launched in `C:\Users\Public\` at 2025-09-16T19:38:40.063299Z by the compromised account.  
+- **Query Used:** (KQL query for DeviceProcessEvents or DeviceFileEvents in Public/Temp/Downloads folders)
+- **Why this matters:** The binary name and location are classic indicators of attacker-staged post-compromise tooling.  
+- **MITRE Techniques:** T1059.003 – Command and Scripting Interpreter: Windows Command Shell, T1204.002 – User Execution: Malicious File
 
 **KQL Query Used:**
 
 ```
 DeviceProcessEvents
-| where DeviceName contains "anthony-001"
-| where InitiatingProcessRemoteSessionDeviceName contains "bubba"
-| where FileName == "BitSentinelCore.exe"
-| where Timestamp >= datetime(2025-05-07T02:00:36.794406Z)
-| project Timestamp, FileName, FolderPath, InitiatingProcessFileName, InitiatingProcessCommandLine, InitiatingProcessRemoteSessionDeviceName
-| order by Timestamp asc
+| where TimeGenerated > (datetime("2025-09-16))
+| where DeviceName contains "flare"
+| where FolderPath has_any ("Public","Temp","Downloads") 
+| project TimeGenerated, AccountName, FileName, FolderPath, ProcessCommandLine
+| order by TimeGenerated asc 
 ```
+<img width="1325" height="217" alt="image" src="https://github.com/user-attachments/assets/4cecfa5b-afac-4f31-aa44-48e8bd6db2fe" />
 
-To verify whether the suspicious file `BitSentinelCore.exe` was manually executed by Bubba, I ran a KQL query on the `DeviceProcessEvents` table. I filtered for the device `anthony-001` and narrowed it down to process events where the initiating process’s remote session device name included `“bubba”`, indicating actions started from Bubba’s session.
 
-I specifically looked for events involving `BitSentinelCore.exe`, the malicious file we identified earlier. By projecting columns like the timestamp, file name, folder path, initiating process name, and command line, I was able to track exactly when and how the file was triggered.
-
-The results confirmed that the file was executed from Bubba’s user session, aligning with the hint that he manually launched the `.exe` file. This clearly indicates user interaction and marks the official start of the malicious payload's execution. The initiating process being `explorer.exe` further supports this, as it suggests Bubba likely double-clicked the `BitSentinelCore.exe` file himself—consistent with a user-initiated action.
+[Back to top](#top)
 
 ---
 
-### 📑 Task: Provide the value of the command utilized to start up the program.
+<a id="flag4"></a>
 
-### ✅ Flag 3 Answer: BitSentinelCore.exe
-
----
-
-<a id="flag-4---keylogger-artifact-written"></a>
-# 🚩 Flag 4 – Keylogger Artifact Written
-
-**Objective:**
-Identify whether any artifact was dropped that indicates keylogger behavior.
-
-**What to Hunt:**
-Search for any file write events associated with possible keylogging activity.
-
-**Hints:**
-1. "A rather efficient way to completing a complex process." 
-2. News.
-
-<img src="https://i.imgur.com/Uc51ZeL.png">
+### 🚩 Flag 4 — Command Line Used
+- **Objective:** Identify the command line used to execute the binary.  
+- **Finding:** "msupdate.exe" -ExecutionPolicy Bypass -File C:\Users\Public\update_check.ps1
+- **Evidence:** Process creation event showing the full command line at 2025-09-16T19:38:40Z.  
+- **Query Used:** (KQL query for DeviceProcessEvents where FileName == "msupdate.exe")
+- **Why this matters:** The `-ExecutionPolicy Bypass` flag is a clear sign of intent to evade PowerShell execution restrictions.  
+- **MITRE Technique:** T1059 – Command and Scripting Interpreter
 
 **KQL Query Used:**
 
 ```
-DeviceFileEvents
-| where DeviceName contains "anthony-001"
-| where InitiatingProcessRemoteSessionDeviceName contains "bubba"
-| where Timestamp >= datetime(2025-05-07T02:00:36.794406Z)
-| project Timestamp, FileName, FolderPath, InitiatingProcessFileName, InitiatingProcessCommandLine, InitiatingProcessRemoteSessionDeviceName
-| order by Timestamp asc
+DeviceProcessEvents
+| where TimeGenerated > (datetime("2025-09-16))
+| where DeviceName contains "flare"
+| where FolderPath has_any ("Public","Temp","Downloads") 
+| project TimeGenerated, AccountName, FileName, FolderPath, ProcessCommandLine
+| order by TimeGenerated asc 
 ```
-
-To identify a keylogger artifact dropped by `BitSentinelCore.exe`, I queried `DeviceFileEvents` for file write events on `anthony-001` during Bubba’s remote session (where `InitiatingProcessRemoteSessionDeviceName` includes “`bubba`”) after `2025-05-07T02:00:36.794406Z`. I projected columns like timestamp, file name, folder path, and initiating process to pinpoint suspicious files.
-
-The results showed a shortcut file, `systemreport.lnk`, created by `explorer.exe` on `2025-05-07T02:06:51.3594039Z` in `C:\Users\4nth0ny!\AppData\Roaming\Microsoft\Windows\Recent`. This file’s name and location suggest it’s a disguised artifact, likely pointing to a log file that captures keystrokes, a common keylogger tactic. The folder `C:\Users\4nth0ny!\AppData\Roaming\Microsoft\Windows\Recent` is often used for shortcuts to recently accessed files, making it a stealthy spot for a keylogger. Since `systemreport.lnk` was created by `explorer.exe` in Bubba’s session at `2025-05-07T02:06:51.3594039Z` with a suspicious name, it likely points to a keylogging script or log file.
+<img width="1323" height="217" alt="image" src="https://github.com/user-attachments/assets/d044270a-77ff-4dbd-8196-33e8d27acb5e" />
 
 
-## Further Analysis
-
-I wanted to check whether `systemreport.lnk` has been observed in the wild before, so I searched for it on Google.
-
-<img src="https://i.imgur.com/P98xac1.png">
-
-ℹ️ [View ANY.RUN Report](https://any.run/report/187124067072ab792c3b14f45ec5d499dade48a7b2a2cb6baa5d6056672bf9d8/24afbe84-5f2a-4d7a-a561-5d807d6132b8)
-
-The search returned a result from `ANY.RUN`, a malware analysis website, showing that this file has been previously linked to malware. I also checked whether this file is part of any legitimate Windows system files but found no evidence of that. This further supports my conclusion that the file is malicious and confirms the answer to this flag.
+[Back to top](#top)
 
 ---
 
-### 📑 Task: What was the name of the keylogger file?
+<a id="flag5"></a>
 
-### ✅ Flag 4 Answer: systemreport.lnk
-
----
-
-<a id="flag-5---registry-persistence-entry"></a>
-# 🚩 Flag 5 – Registry Persistence Entry
-
-**Objective:**
-Determine if the malware established persistence via the Windows Registry.
-
-**What to Hunt:**
-Look for registry modifications that enable the malware to auto-run on startup.
-
-**Hint:**
-1. Long answer.
-
-<img src="https://i.imgur.com/Ak3Vh7d.png">
+### 🚩 Flag 5 — Persistence Mechanism
+- **Objective:** Identify the persistence mechanism created.  
+- **Finding:** Scheduled task `MicrosoftUpdateSync`.  
+- **Evidence:** Scheduled task registration event immediately after binary execution at 2025-09-16T19:39:45.4614515Z.  
+- **Query Used:** (KQL query for DeviceEvents or DeviceRegistryEvents with ActionType ScheduledTaskCreated)
+- **Why this matters:** Scheduled tasks provide reliable, SYSTEM-level persistence that survives reboots and blends with legitimate Windows activity.  
+- **MITRE Technique:** T1053.005 – Scheduled Task/Job: Scheduled Task
 
 **KQL Query Used:**
 
 ```
-DeviceRegistryEvents
-| where DeviceName == "anthony-001"
-| where Timestamp >= datetime(2025-05-07T02:00:36.794406Z)
-| where InitiatingProcessFileName has "BitSentinelCore.exe"
-| project Timestamp, ActionType, RegistryKey, RegistryValueName, RegistryValueData, InitiatingProcessFileName, InitiatingProcessCommandLine
+DeviceEvents
+| where TimeGenerated > todatetime('2025-09-16T19:38:40.063299Z')
+| where DeviceName contains "flare"
+| where ActionType == "ScheduledTaskCreated"
+| project Timestamp, DeviceName, ActionType, TaskName = tostring(AdditionalFields.TaskName), InitiatingProcessFileName, InitiatingProcessCommandLine
 | order by Timestamp asc
 ```
+<img width="1325" height="189" alt="image" src="https://github.com/user-attachments/assets/36871ce7-95f5-43c8-b402-03ee0a6c9c19" />
 
-To investigate whether `BitSentinelCore.exe` established persistence via the Windows Registry, I queried the `DeviceRegistryEvents` table for activity on the `anthony-001` device from `2025-05-07T02:00:36.794406Z` onwards. I filtered for registry events where the `InitiatingProcessFileName` contains `BitSentinelCore.exe`. The results showed a modification at `2025-05-07T02:02:14.9669902Z` to the registry path `HKEY_CURRENT_USER\S-1-5-21-2009930472-1356288797-1940124928-500\SOFTWARE\Microsoft\Windows\CurrentVersion\Run`, with `RegistryValueData` set to `C:\ProgramData\BitSentinelCore.exe`, ensuring the malware runs at startup.
+[Back to top](#top)
 
----
-
-### 📑 Task: Identify the full Registry Path value.
-
-### ✅ Flag 5 Answer: HKEY_CURRENT_USER\S-1-5-21-2009930472-1356288797-1940124928-500\SOFTWARE\Microsoft\Windows\CurrentVersion\Run
 
 ---
 
