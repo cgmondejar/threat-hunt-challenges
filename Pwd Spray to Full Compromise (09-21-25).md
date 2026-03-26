@@ -1,5 +1,5 @@
 <a id="top"></a>
-# 🕵️ The Cyber Range - The Great Admin Heist CTF
+# 🕵️ Pwd Spray to Full Compromise - Threat Hunt
 
 ## 🌟 Table of Contents 🌟
 
@@ -11,12 +11,14 @@
 - [🚩 Flag 3 — Executed Binary](#flag3)
 - [🚩 Flag 4 — Command Line Used](#flag4)
 - [🚩 Flag 5 — Persistence Mechanism](#flag5)
-- [🚩 Flag 6 - Daily Scheduled Task Created](#flag-6---daily-scheduled-task-created)
-- [🚩 Flag 7 - Process Spawn Chain](#flag-7---process-spawn-chain)
-- [🚩 Flag 8 - Timestamp Correlation](#flag-8---timestamp-correlation)
-- [📊 Conclusion, Investigation Timeline & Key Findings](#conclusion-investigation-timeline--key-findings)
+- [🚩 Flag 6 — Defender Setting Modified](#flag6)
+- [🚩 Flag 7 — Discovery Command](#flag7)
+- [🚩 Flag 8 — Archive File Created](#flag8)
+- [🚩 Flag 9 — C2 Connection Destination](#flag9)
+- [🚩 Flag 10 — Exfiltration Attempt](#flag10)
+- [📊 Key Findings Summary](#key-findings-summary)
 - [🛡️ MITRE ATT&CK Mapping](#mitre-attck-mapping)
-- [🛠️ Remediation](#remediation)
+- [📌 Recommendations](#recommendation)
 
 ---
 
@@ -39,6 +41,11 @@ This attack demonstrates a full intrusion lifecycle:
 
 **Initial Access** → **Execution** → **Persistence** → **Defense Evasion** → **Discovery** → **Collection** → **C2** → **Exfiltration**
 
+### Tools Used
+- Advanced Hunting (KQL) in Microsoft Defender for Endpoint
+- Microsoft Sentinel
+
+  
 [Back to top](#top)
 
 ---
@@ -212,173 +219,202 @@ DeviceEvents
 
 ---
 
-<a id="flag-6---daily-scheduled-task-created"></a>
-# 🚩 Flag 6 - Daily Scheduled Task Created
+<a id="flag6"></a>
 
-**Objective:**
-Identify the value proves that the attacker intents for long-term access.
+### 🚩 Flag 6 — Defender Setting Modified
+- **Objective:** Identify what Defender setting was modified.  
+- **Finding:** `C:\Windows\Temp`.  
+- **Evidence:** Registry modification under Windows Defender Exclusions\Paths at 2025-09-16T19:39:48Z.  
+- **Query Used:** (KQL query for DeviceRegistryEvents on Windows Defender Exclusions\Paths)
+- **Why this matters:** Adding `C:\Windows\Temp` to exclusions prevents Defender from scanning staged payloads or exfiltration archives placed there.  
+- **MITRE Technique:** T1562.001 – Impair Defenses: Disable or Modify Windows Defender
 
-**What to Hunt:**
-Identify name of the associated scheduled task.
+**KQL Query Used:**
 
-**Hints:**
-1. Three.
-2. Fitness.
+```
+DeviceRegistryEvents
+| where TimeGenerated > todatetime('2025-09-16T19:38:40.063299Z')
+| where DeviceName contains "flare"
+| where RegistryKey has "Windows Defender\\Exclusions\\Paths"
+   or RegistryKey has "Policies\\Microsoft\\Windows Defender\\Exclusions\\Paths"
+| where ActionType in ("RegistryValueSet", "RegistryKeyCreated")
+| project TimeGenerated, DeviceName, ActionType, RegistryKey, RegistryValueName, RegistryValueData
+| order by TimeGenerated desc
+```
+<img width="1319" height="268" alt="image" src="https://github.com/user-attachments/assets/14d64d22-74a7-4de4-a54f-289faf4e7a02" />
 
-<img src="https://i.imgur.com/SuHZLkQ.png">
+[Back to top](#top)
+
+---
+
+<a id="flag7"></a>
+
+### 🚩 Flag 7 — Discovery Command
+- **Objective:** Identify the discovery command the attacker ran.  
+- **Finding:** `"cmd.exe" /c systeminfo`.  
+- **Evidence:** Earliest post-execution process creation involving `cmd.exe` at 2025-09-16T19:40:28Z.  
+- **Query Used:** (KQL query for DeviceProcessEvents with cmd.exe or powershell.exe post-execution)
+- **Why this matters:** `systeminfo` is a standard T1082 technique for rapid host enumeration and situational awareness.  
+- **MITRE Techniques:** T1082 – System Information Discovery
 
 **KQL Query Used:**
 
 ```
 DeviceProcessEvents
-| where DeviceName == "anthony-001"
-| where Timestamp >= datetime(2025-05-07T02:00:36.794406Z)
-| where ProcessCommandLine has "schtasks"
-| project Timestamp, FileName, FolderPath, ProcessCommandLine, InitiatingProcessFileName, AccountName
-| order by Timestamp asc
+| where TimeGenerated > todatetime('2025-09-16T19:38:40.063299Z')
+| where DeviceName contains "flare"
+| where FileName contains "cmd" or FileName contains "powershell"
+| order by TimeGenerated asc 
+| where InitiatingProcessCommandLine has_any ("powershell", "cmd")
+| project TimeGenerated, FileName, InitiatingProcessCommandLine, ProcessCommandLine
 ```
+<img width="1319" height="214" alt="image" src="https://github.com/user-attachments/assets/8e9f3b3f-1914-4007-81f4-ee1ed548d956" />
 
-I searched for scheduled task creation commands by filtering for `schtasks` in the process command line on the device `anthony-001` from `2025-05-07T02:00:36.794406Z` onwards. At `2025-05-07T02:02:14.9749438Z`, `cmd.exe` initiated `schtasks.exe` with the command: `"cmd.exe" /c schtasks /Create /SC DAILY /TN "UpdateHealthTelemetry" /TR "C:\ProgramData\BitSentinelCore.exe" /ST 14:00`.
-
-This task runs daily at 2PM and points to the `BitSentinelCore.exe` executable, confirming the attacker set up persistence for long-term access via a daily scheduled task. So, the answer to this flag is the scheduled task `"UpdateHealthTelemetry"`. The hint ‘`fitness`’ was useful here because it relates to ‘`health`’ in the scheduled task name.
-
----
-
-### 📑 Task: What is the name of the created scheduled task?
-
-### ✅ Flag 6 Answer: UpdateHealthTelemetry
+[Back to top](#top)
 
 ---
 
-<a id="flag-7---process-spawn-chain"></a>
-# 🚩 Flag 7 – Process Spawn Chain
 
-**Objective:**
-Understand the full chain of process relationships that led to task creation.
+<a id="flag8"></a>
 
-**What to Hunt:**
-Trace the parent process that led to cmd.exe, and subsequently to schtasks.exe.
-
-**Hint:** (how the answer should look)
-bubba.exe -> newworldorder.exe -> illuminate.exe
-
-<img src="https://i.imgur.com/F9MwiLz.png">
+### 🚩 Flag 8 — Archive File Created
+- **Objective:** Identify the archive file created by the attacker.  
+- **Finding:** `backup_sync.zip`.  
+- **Evidence:** File creation event for a .zip archive in `C:\Users\SLFlare\AppData\Local\Temp\` shortly after discovery activity.  
+- **Query Used:** (KQL query for DeviceFileEvents where FileName endswith ".zip")
+- **Why this matters:** Local archiving (T1560.001) stages collected data for efficient exfiltration.  
+- **MITRE Technique:** T1560.001 – Archive Collected Data: Local Archiving
 
 **KQL Query Used:**
 
 ```
-DeviceProcessEvents
-| where DeviceName == "anthony-001"
-| where Timestamp >= datetime(2025-05-07T02:00:36.794406Z)
-| where FileName in ("cmd.exe", "schtasks.exe")
-| project Timestamp, FileName, ProcessId, InitiatingProcessFileName, InitiatingProcessId, ProcessCommandLine
-| order by Timestamp asc
+DeviceFileEvents
+| where TimeGenerated > todatetime('2025-09-16T19:38:40.063299Z')
+| where DeviceName contains "flare"
+| where FileName endswith ".zip" or FileName endswith ".rar" or FileName endswith ".7z"
+| where ActionType == "FileCreated"
+| project TimeGenerated, ActionType, FileName, FolderPath
+| order by TimeGenerated asc 
 ```
 
-To trace the complete process chain behind the scheduled task creation, I analysed process events on the `anthony-001` device, starting from `2025-05-07T02:00:36.794406Z`. 
+<img width="1316" height="188" alt="image" src="https://github.com/user-attachments/assets/985495b7-9643-4da3-990c-256300c98cfc" />
 
-The command line identified was:
+[Back to top](#top)
+
+---
+
+<a id="flag9"></a>
+
+### 🚩 Flag 9 — C2 Connection Destination
+- **Objective:** Identify the C2 connection destination.  
+- **Finding:** `185.92.220.87`.  
+- **Evidence:** Earliest outbound network connection initiated by `msupdate.exe` to the external IP on port 80.  
+- **Query Used:** (KQL query for DeviceNetworkEvents initiated by msupdate.exe)
+- **Why this matters:** This establishes the attacker’s command-and-control channel and potential tool-download beacon.  
+- **MITRE Techniques:** T1071.001 – Application Layer Protocol: Web Protocols (HTTP/S), T1105 – Ingress Tool Transfer
+
+
+**KQL Query Used:**
 
 ```
-"cmd.exe" /c schtasks /Create /SC DAILY /TN "UpdateHealthTelemetry" /TR "C:\ProgramData\BitSentinelCore.exe" /ST 14:00
+DeviceNetworkEvents
+| where TimeGenerated > todatetime('2025-09-16T19:38:40.063299Z')
+| where DeviceName contains "flare"
+| where InitiatingProcessFileName == "msupdate.exe"
+| project TimeGenerated, ActionType, InitiatingProcessCommandLine, InitiatingProcessFileName, InitiatingProcessFolderPath, RemoteIP, RemotePort, RemoteUrl
+| order by TimeGenerated asc 
 ```
+<img width="1326" height="132" alt="image" src="https://github.com/user-attachments/assets/f79c560d-b858-4c44-8b4b-e7ea2c294bd4" />
 
-This revealed that `BitSentinelCore.exe`, via a spawned `cmd.exe`, executed `schtasks.exe` to establish a daily scheduled task named `UpdateHealthTelemetry` that runs `BitSentinelCore.exe` itself.
-
-Examining the parent-child process relationships confirmed the sequence as:
-
-**BitSentinelCore.exe -> cmd.exe -> schtasks.exe**
-
-This indicates the malware initiated a command shell `(cmd.exe)`, which then leveraged the Windows Task Scheduler tool `(schtasks.exe)` to ensure its persistence on the system.
+[Back to top](#top)
 
 ---
 
-### 📑 Task: Provide the kill chain.
+<a id="flag10"></a>
 
-### ✅ Flag 7 Answer: BitSentinelCore.exe -> cmd.exe -> schtasks.exe
+### 🚩 Flag 10 — Exfiltration Attempt
+- **Objective:** Identify the exfiltration attempt.  
+- **Finding:** `185.92.220.87:8081`.  
+- **Evidence:** `curl.exe` POST of `backup_sync.zip` to the external endpoint over unencrypted HTTP.  
+- **Query Used:** (KQL query for DeviceNetworkEvents where ProcessCommandLine contains backup_sync.zip)
+- **Why this matters:** Data was staged and exfiltrated over an unencrypted protocol (T1048.003), confirming successful collection and outbound transfer.  
+- **Flag Answer:**
+
+**KQL Query Used:**
+
+```
+DeviceNetworkEvents
+| where TimeGenerated > todatetime('2025-09-16T19:38:40.063299Z')
+| where DeviceName contains "flare"
+| where InitiatingProcessCommandLine contains "backup_sync.zip"
+| project TimeGenerated, InitiatingProcessCommandLine, InitiatingProcessFileName, InitiatingProcessFolderPath, RemoteIP, RemotePort
+| order by TimeGenerated asc 
+```
+<img width="1415" height="138" alt="image" src="https://github.com/user-attachments/assets/c07bece6-9cdc-4883-830c-78523e064b54" />
+
+
+[Back to top](#top)
 
 ---
 
-<a id="flag-8---timestamp-correlation"></a>
-# 🚩 Flag 8 – Timestamp Correlation
+<a id="key-findings-summary"></a>
 
-**Objective:**
-Correlate all observed behaviors to a single initiating event
+## 📊 Key Findings Summary
 
-**What to Hunt:**
-Compare timestamps from the initial execution to file creation, registry modification, and task scheduling.
+| Flag | Objective                                      | Key Finding                          | Flag Answer                  |
+|------|------------------------------------------------|--------------------------------------|------------------------------|
+| 1    | Attacker IP Address                            | External IP used for RDP brute-force and successful login | `159.26.106.84`             |
+| 2    | Compromised Account                            | Account that was successfully compromised via RDP | `slflare`                   |
+| 3    | Executed Binary                                | Malicious binary dropped and executed after login | `msupdate.exe`              |
+| 4    | Command Line Used                              | Full command line used to run the malicious binary | `"msupdate.exe" -ExecutionPolicy Bypass -File C:\Users\Public\update_check.ps1` |
+| 5    | Persistence Mechanism                          | Persistence method created by the attacker | `MicrosoftUpdateSync`       |
+| 6    | Defender Setting Modified                      | Path added to Microsoft Defender exclusions | `C:\Windows\Temp`           |
+| 7    | Discovery Command                              | Command executed for host discovery | `"cmd.exe" /c systeminfo`   |
+| 8    | Archive File Created                           | Compressed archive file used for data staging | `backup_sync.zip`           |
+| 9    | C2 Connection Destination                      | External Command & Control server IP | `185.92.220.87`             |
+| 10   | Exfiltration Attempt                           | Destination used for data exfiltration | `185.92.220.87:8081`        |
 
-**Thought:**
-Builds a forensic timeline that strengthens cause-and-effect analysis, confirming that all actions originated from the execution of the fake antivirus program.
 
-I identified the initial event that triggered this entire incident early in the investigation, allowing me to correlate subsequent activities in chronological order. The timestamp for this event is `2025-05-07T02:00:36.794406Z`.
+[Back to top](#top)
 
 ---
-
-### 📑 Task: Provide the timestamp of the leading event that's causing all these mess.
-
-### ✅ Flag 8 Answer: 2025-05-07T02:00:36.794406Z
-
----
-
-<a id="conclusion-investigation-timeline--key-findings"></a>
-# 📊 Conclusion, Investigation Timeline & Key Findings
-
-At Acme Corp, the Phantom Hackers targeted Bubba Rockerfeatherman III’s privileged IT admin account to steal sensitive data. Using Microsoft Defender for Endpoint telemetry and KQL queries, I uncovered a multi-stage attack on the device `anthony-001`. The initial stage of the compromise began when `BitSentinelCore.exe` was written to disk at `2025-05-07T02:00:36.794406Z`, with the active phase starting upon execution by user `Bubba` at `2025-05-07T02:02:14.6264638Z`.
-
-
-The timeline of events is as follows:
-
-- **2025-05-07T02:00:36.794406Z**: `BitSentinelCore.exe` (malicious file) written to disk. This marks the earliest detection of this file, indicating the initial stage of the attack.
-
-- **2025-05-07T02:02:14.6264638Z**: `BitSentinelCore.exe` executed by user Bubba, initiating the active phase of the malicious program.
-
-- **2025-05-07T02:02:14.9669902Z**: Registry modification in `HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Run` performed by `BitSentinelCore.exe` to ensure persistence on system reboot.
-
-- **2025-05-07T02:02:14.9749438Z**: Daily scheduled task `UpdateHealthTelemetry` created through a process chain (`BitSentinelCore.exe -> cmd.exe -> schtasks.exe`) to enable repeated execution of the malicious program.
-
-- **2025-05-07T02:06:51.3594039Z**: Keylogger artifact `systemreport.lnk` written, possibly beginning data collection or exfiltration activities.
-
-The attack began when the malicious file BitSentinelCore.exe was created on the system using csc.exe, a legitimate Microsoft tool — likely as a way to avoid detection. Shortly after, user Bubba unknowingly executed the file, triggering the active phase of the intrusion. The malware then established persistence through registry modifications and a scheduled task. Immediate remediation is critical to secure Bubba’s account and prevent further compromise of Acme’s systems and assets.
-
-## Click the image to explore the timeline!
-
-[![Timeline](https://i.imgur.com/lA4t98q.png)](https://serg-luka.github.io/Threat-Hunting-CTF/timeline.html)
-
-
-## Key Findings
-
-| Flag | Objective | Key Findings | Flag Answer |
-|------|-----------|--------------|-------------|
-| **1** | Identify the fake antivirus program name | Queried `DeviceProcessEvents` for `.exe` files on `anthony-001` starting with A, B, or C. Identified `BitSentinelCore.exe`, likely the malicious program. | `BitSentinelCore.exe` |
-| **2** | Confirm malicious file written to disk | Queried `DeviceFileEvents` for `BitSentinelCore.exe` on `anthony-001`. Found `csc.exe` (Microsoft C# compiler) compiled and wrote the binary to disk, indicating a "living off the land" tactic. | `csc.exe` |
-| **3** | Verify manual execution of the program | Queried `DeviceProcessEvents` for `BitSentinelCore.exe` execution in Bubba’s session on `anthony-001`. Confirmed Bubba manually executed the file. | `BitSentinelCore.exe` |
-| **4** | Identify keylogger artifact | Queried `DeviceFileEvents` for file writes in Bubba’s session post-initial event. Found `systemreport.lnk` created by `explorer.exe`, likely a keylogger artifact. | `systemreport.lnk` |
-| **5** | Detect registry persistence entry | Queried `DeviceRegistryEvents` for `BitSentinelCore.exe` activity. Found modification to `HKEY_CURRENT_USER\...\Run` to run `BitSentinelCore.exe` at startup. | `HKEY_CURRENT_USER\S-1-5-21-2009930472-1356288797-1940124928-500\SOFTWARE\Microsoft\Windows\CurrentVersion\Run` |
-| **6** | Identify scheduled task for persistence | Queried `DeviceProcessEvents` for `schtasks` commands. Found `cmd.exe` created daily task `UpdateHealthTelemetry` to run `BitSentinelCore.exe`. | `UpdateHealthTelemetry` |
-| **7** | Trace process spawn chain | Analysed `DeviceProcessEvents` for `cmd.exe` and `schtasks.exe`. Established chain: `BitSentinelCore.exe` initiated `cmd.exe`, which ran `schtasks.exe`. | `BitSentinelCore.exe -> cmd.exe -> schtasks.exe` |
-| **8** | Correlate behaviors to initiating event | Built forensic timeline from initial execution of `BitSentinelCore.exe` at `2025-05-07T02:00:36.794406Z`, linking all subsequent events (file writes, registry changes, task creation). | `2025-05-07T02:00:36.794406Z` |
 
 <a id="mitre-attck-mapping"></a>
-# 🛡️ MITRE ATT&CK Mapping
 
-| ID | MITRE Tactic | MITRE Technique | Description |
-|----|--------------|-----------------|-------------|
-| 1  | Initial Access (TA0001) | Phishing: Spearphishing Attachment (T1566.001) | Attackers use phishing emails with malicious attachments to gain initial access to the target system. |
-| 2  | Execution (TA0002) | User Execution: Malicious File (T1204.002) | A user is tricked into executing a malicious file, triggering the attack payload. |
-| 3  | Execution (TA0002) | Native API (T1106) | Attackers leverage legitimate system binaries to execute malicious code, blending into normal operations. |
-| 4  | Collection (TA0009) | Input Capture: Keylogging (T1056.001) | Malware captures user keystrokes to steal credentials or sensitive data. |
-| 5  | Persistence (TA0003) | Registry Run Keys / Startup Folder (T1547.001) | Malware modifies registry keys to ensure execution on system startup. |
-| 6  | Persistence (TA0003) | Scheduled Task/Job: Scheduled Task (T1053.005) | A scheduled task is created to maintain long-term access to the compromised system. |
-| 7  | Execution (TA0002) | Command and Scripting Interpreter: Windows Command Shell (T1059.003) | Attackers use the Windows command shell to execute commands and further their attack. |
+## 🛡️ MITRE ATT&CK Mapping
 
-<a id="remediation"></a>
-# 🛠️ Remediation
+| Flag | Description                          | MITRE ATT&CK Tactic                  | MITRE ATT&CK Technique                          | Technique ID     | Sub-Technique ID     |
+|------|--------------------------------------|--------------------------------------|-------------------------------------------------|------------------|----------------------|
+| 1    | Attacker IP Address (RDP Brute Force) | Initial Access                      | Brute Force                                     | T1110           | T1110.001 (Password Guessing) |
+| 1    | Attacker IP Address (RDP Access)     | Initial Access                      | Remote Services: Remote Desktop Protocol        | T1021           | T1021.001           |
+| 2    | Compromised Account (`slflare`)      | Initial Access / Persistence        | Valid Accounts                                  | T1078           | -                   |
+| 3    | Executed Binary (`msupdate.exe`)     | Execution                           | User Execution / Command and Scripting Interpreter | T1204 / T1059   | T1059.001 (PowerShell) |
+| 4    | Command Line Used                    | Execution                           | Command and Scripting Interpreter               | T1059           | T1059.001 (PowerShell) |
+| 5    | Persistence Mechanism (`MicrosoftUpdateSync`) | Persistence / Privilege Escalation | Scheduled Task/Job: Scheduled Task              | T1053           | T1053.005           |
+| 6    | Defender Setting Modified (`C:\Windows\Temp`) | Defense Evasion                    | Impair Defenses: Disable or Modify Tools        | T1562           | T1562.001           |
+| 7    | Discovery Command (`systeminfo`)     | Discovery                           | System Information Discovery                    | T1082           | -                   |
+| 8    | Archive File Created (`backup_sync.zip`) | Collection                       | Archive Collected Data: Archive via Utility     | T1560           | T1560.001           |
+| 9    | C2 Connection Destination            | Command and Control                 | Application Layer Protocol                      | T1071           | -                   |
+| 10   | Exfiltration Attempt (`curl` to 185.92.220.87:8081) | Exfiltration                | Exfiltration Over Alternative Protocol          | T1048           | T1048.003 (Unencrypted/Non-C2 Protocol) |
 
-- Isolate the compromised machine (`anthony-001`) to prevent further malicious activity or lateral movement.
-- Remove `BitSentinelCore.exe` from the system.
-- Delete the `UpdateHealthTelemetry` scheduled task.
-- Revert the registry entry in `HKEY_CURRENT_USER\S-1-5-21-2009930472-1356288797-1940124928-500\SOFTWARE\Microsoft\Windows\CurrentVersion\Run`.
-- Run a comprehensive antivirus scan on `anthony-001` with updated software to detect and remove additional malicious files or artifacts. Since the fake antivirus `BitSentinelCore.exe` was dropped via `csc.exe`, a legitimate Microsoft tool, investigate scan results and logs to trace the root cause, such as a phishing email or malicious script that triggered the compilation.
-- Update security policies to prevent future incidents, including enhancing user training on phishing awareness, strengthening email filtering to block malicious attachments, and implementing application allowlisting to restrict unverified executables.
-- Reset Bubba’s credentials to secure Acme’s assets.
+**Notes:**  
+- Some flags map to multiple techniques depending on the observed behavior.  
+- Mapping is derived directly from the threat hunt findings.
+
+[Back to top](#top)
+
+---
+ 
+<a id="recommendation"></a>
+
+## 📌 Recommendations
+- Immediately isolate and re-image the compromised host `slflarewinsysmo`.
+- Reset the `slflare` account password and enforce MFA for all RDP access.
+- Review and remove the malicious scheduled task `MicrosoftUpdateSync` and Defender exclusion.
+- Block the attacker IP `159.26.106.84` and C2 infrastructure `185.92.220.87` at the firewall level.
+- Enable enhanced RDP logging and consider restricting RDP exposure or implementing a bastion host / Zero Trust model.
+- Conduct a full credential sweep and monitor for lateral movement.
+
+[Back to top](#top)
+
+**End of Report**  
