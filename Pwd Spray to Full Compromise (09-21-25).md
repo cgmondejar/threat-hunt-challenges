@@ -6,7 +6,7 @@
 - [🌍 Executive Summary](#executive-summary)
 - [🔬 Hypothesis](#hypothesis)
 - [📅 Timeline of Events](#timeline-of-events)
-- [🚩 Flag 1 — Attacker IP Address](@flag1)
+- [🚩 Flag 1 — Attacker IP Address](@attacker-ip-address)
 - [🚩 Flag 2: Malicious File Written Somewhere](#flag-2-malicious-file-written-somewhere)
 - [🚩 Flag 3: Execution of the Program](#flag-3-execution-of-the-program)
 - [🚩 Flag 4 - Keylogger Artifact Written](#flag-4---keylogger-artifact-written)
@@ -76,7 +76,7 @@ This hypothesis will be validated or refuted through KQL-based hunting across De
 
 ## 🎯 Flag-by-Flag Findings
 
-<a id="flag1"></a>
+<a id="attacker-ip-address"></a>
 ### 🚩 Flag 1 — Attacker IP Address
 
 - **Objective:** Identify the external IP that successfully logged in via RDP after repeated failures.  
