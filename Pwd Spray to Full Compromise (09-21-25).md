@@ -1,5 +1,5 @@
 <a id="top"></a>
-# 🕵️ Pwd Spray to Full Compromise - Threat Hunt
+# 🕵️ Pwd Spray to Full Compromise - Threat Hunt Challenge
 ***Analyst:*** Chris Mondejar
 
 ## 🌟 Table of Contents 🌟
