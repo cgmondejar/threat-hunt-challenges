@@ -7,7 +7,7 @@
 - [🔬 Hypothesis](#hypothesis)
 - [📅 Timeline of Events](#timeline-of-events)
 - [🚩 Flag 1 — Attacker IP Address](#flag1)
-- [🚩 Flag 2: Malicious File Written Somewhere](#flag-2-malicious-file-written-somewhere)
+- [🚩 Flag 2 — Compromised Account](#flag2)
 - [🚩 Flag 3: Execution of the Program](#flag-3-execution-of-the-program)
 - [🚩 Flag 4 - Keylogger Artifact Written](#flag-4---keylogger-artifact-written)
 - [🚩 Flag 5 - Registry Persistence Entry](#flag-5---registry-persistence-entry)
@@ -78,12 +78,14 @@ This hypothesis will be validated or refuted through KQL-based hunting across De
 
 <a id="flag1"></a>
 ### 🚩 Flag 1 — Attacker IP Address
+MITRE Technique: T1110.001 – Brute Force: Password Guessing
 
 - **Objective:** Identify the external IP that successfully logged in via RDP after repeated failures.  
 - **Finding:** Attacker IP `159.26.106.84`.  
 - **Evidence:** Multiple brute-force attempts observed from the same external IP starting 13 September 2025, with successful login at 2025-09-16T18:40:57.3785102Z on DeviceName containing “flare”.  
 - **Query Used:** (KQL query for DeviceLogonEvents filtered by DeviceName and RemoteIP)
-- **Why this matters:** Multiple failed attempts followed by a success confirms a brute-force or password spray attack, establishing the initial access vector.  
+- **Why this matters:** Multiple failed attempts followed by a success confirms a brute-force or password spray attack, establishing the initial access vector.
+- **MITRE Technique:** T1110.001 – Brute Force: Password Guessing
 
 **KQL Query Used:**
 
@@ -103,44 +105,31 @@ DeviceLogonEvents
 
 ---
 
-<a id="flag-2-malicious-file-written-somewhere"></a>
-# 🚩 Flag 2: Malicious File Written Somewhere
+<a id="flag2"></a>
 
-**Objective:**
-Confirm that the fake antivirus binary was written to the disk on the host system.
-
-**What to Hunt:**
-Identify the one responsible for dropping the malicious file into the disk.
-
-**Hints:**
-1. Legit software.
-2. Microsoft.
-3. Three.
-
-<img src="https://i.imgur.com/4ZLnH7N.png">
+### 🚩 Flag 2 — Compromised Account
+- **Objective:** Identify which account was compromised.  
+- **Finding:** Account `slflare`.  
+- **Evidence:** Successful logon events tied to the attacker IP on the `slflare` account at 2025-09-16T18:40:57Z (Network) and subsequent RemoteInteractive session.  
+- **Query Used:** (KQL query for DeviceLogonEvents showing LogonSuccess for slflare)
+- **Why this matters:** Confirms the adversary gained access with `slflare`, serving as the pivot point for all subsequent malicious activity on the host.  
+- **MITRE Technique:** T1078 – Valid Accounts
 
 **KQL Query Used:**
 
 ```
-DeviceFileEvents
-| where DeviceName == "anthony-001"
-| where FileName == "BitSentinelCore.exe"
-| where Timestamp >= datetime(2025-05-07T02:00:36.794406Z)
-| project Timestamp, FileName, FolderPath, InitiatingProcessFileName, InitiatingProcessCommandLine, ReportId
-| order by Timestamp asc
+DeviceLogonEvents
+| where TimeGenerated > (datetime("2025-09-16))
+| where DeviceName contains "flare"
+| where RemoteIP !in ("","-")
+| project TimeGenerated, AccountName, ActionType, DeviceName, FailureReason, RemoteIP
+| order by TimeGenerated asc
 ```
 
-To confirm that the fake antivirus binary was written to disk, I pivoted to the `DeviceFileEvents` table and queried activity on the device `anthony-001`, where the incident began. Since the first flag identified the suspicious file as `BitSentinelCore.exe`, I used that as my primary search term.
+<img width="1327" height="205" alt="image" src="https://github.com/user-attachments/assets/816abacf-1fd8-44f7-9851-7b16779fd307" />
 
-I filtered for events involving this file and projected key columns such as the timestamp, folder path, initiating process, and command line. Sorting the results by time allowed me to pinpoint when the binary was dropped and what triggered its creation.
 
-Only one result matched the query. It showed that the file was written to `C:\ProgramData\BitSentinelCore.exe` and was initiated by `csc.exe`, the Microsoft C# compiler. This suggests the binary wasn’t just executed—it was compiled on the system using native Windows tooling (as the hint suggested). This supports the idea of a “living off the land” technique, where trusted system binaries are abused to create and deploy malicious payloads locally—making detection by traditional antivirus tools more difficult.
-
----
-
-### 📑 Task: Provide the name of the program in question.
-
-### ✅ Flag 2 Answer: csc.exe
+[Back to top](#top)
 
 ---
 
