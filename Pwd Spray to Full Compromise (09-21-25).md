@@ -4,8 +4,9 @@
 ## 🌟 Table of Contents 🌟
 
 - [🌍 Executive Summary](#executive-summary)
-- [🎯 Mission](#mission)
-- [🚩 Flag 1: Identify the Fake Antivirus Program Name](#flag-1-identify-the-fake-antivirus-program-name)
+- [🔬 Hypothesis](#hypothesis)
+- [📅 Timeline of Events](#timeline-of-events)
+- [🚩 Flag 1 — Attacker IP Address](@flag1)
 - [🚩 Flag 2: Malicious File Written Somewhere](#flag-2-malicious-file-written-somewhere)
 - [🚩 Flag 3: Execution of the Program](#flag-3-execution-of-the-program)
 - [🚩 Flag 4 - Keylogger Artifact Written](#flag-4---keylogger-artifact-written)
@@ -40,92 +41,66 @@ This attack demonstrates a full intrusion lifecycle:
 
 [Back to top](#top)
 
-<a id="mission"></a>
-## 🎯 Mission
+---
 
-Hunt through Microsoft Defender for Endpoint (MDE) telemetry, analyse signals, query using KQL, and follow the breadcrumbs before the keys to Bubba’s empire vanish forever.
+<a id="hypothesis"></a>
+## 🔬 Hypothesis
 
-Will you stop the heist in time… or will the Phantom Hackers disappear with the crown jewels of cyberspace?
+An external attacker performed a brute-force attack against the VM containing "flare" to gain initial access using a valid account. Once inside, the attacker executed a malicious binary dropped in a user-writable directory, established persistence via a scheduled task, disabled Microsoft Defender protections by adding an exclusion, performed host discovery, and staged collected data in an archive file for potential exfiltration.
 
-**Known Information:**
-💻 DeviceName: anthony-001
+This hypothesis will be validated or refuted through KQL-based hunting across DeviceLogonEvents, DeviceProcessEvents, DeviceEvents, DeviceRegistryEvents, and DeviceFileEvents.
 
-<a id="flag-1-identify-the-fake-antivirus-program-name"></a>
-# 🚩 Flag 1: Identify the Fake Antivirus Program Name
+[Back to top](#top)
 
-**Objective:**
-Determine the name of the suspicious or deceptive antivirus program that initiated the security incident.
 
-**What to Hunt:**
-Look for the name of the suspicious file or binary that resembles an antivirus but is responsible for the malicious activity.
+---
+<a id="timeline-of-events"></a>
+## 📅 Timeline of Events
 
-**Hints:**
-1. Platform we use in our company.
-2. Program name likely begins with the following letters: A, B, or C.
-3. Contains.
+| Time (UTC+09:00)       | Stage                   | Event / Artifact                                                                                  |
+|-------------------------|-------------------------|--------------------------------------------------------------------------------------------------|
+| Sep 16, 2025 06:40:57   | Initial Access          | Successful RDP login from attacker IP `159.26.106.84` to account `slflare`                       |
+| Sep 16, 2025 06:43:46   | Initial Access          | `RemoteInteractive` logon confirms RDP session established                                       |
+| Sep 16, 2025 07:38:01   | Execution               | File `msupdate.exe` created in `C:\Users\Public\` by PowerShell                                  |
+| Sep 16, 2025 07:38:40   | Execution               | `msupdate.exe` launched with `-ExecutionPolicy Bypass -File update_check.ps1`                    |
+| Sep 16, 2025 07:39:45   | Persistence             | Scheduled Task `MicrosoftUpdateSync` created in TaskCache registry                               |
+| Sep 16, 2025 07:39:48   | Defense Evasion         | Defender exclusion added for `C:\Windows\Temp`                                                   |
+| Sep 16, 2025 07:40:28   | Discovery               | Discovery command executed: `"cmd.exe" /c systeminfo`                                            |
+| Sep 16, 2025 07:41:30   | Collection / Staging    | Archive file `backup_sync.zip` created by `slflare`                                              |
+| Sep 16, 2025 07:42:17   | Command & Control       | Outbound connection attempt to C2 `185.92.220.87` on port 80                                     |
+| Sep 16, 2025 07:43:42   | Exfiltration            | `curl` used to POST `backup_sync.zip` to `http://185.92.220.87:8081/upload`                      |
 
-<img src="https://i.imgur.com/9WOObDq.png">
-
-<img src="https://i.imgur.com/EOdog6V.png">
-
-**KQL Query Used:**
-
-```
-DeviceProcessEvents
-| where DeviceName == "anthony-001"
-| where AccountName != "system"
-| where FileName startswith "a" or FileName startswith "b" or FileName startswith "c"
-| where FileName endswith ".exe"
-| project Timestamp, FileName, FolderPath, ProcessCommandLine, InitiatingProcessFileName, AccountName
-| order by Timestamp asc
-```
-
-To identify the suspicious program that kicked off the incident, I ran a KQL query on the `DeviceProcessEvents` table, focusing specifically on the device `anthony-001`, which we already knew was involved based on the scenario brief. Based on the hint that the fake antivirus program starts with `A, B, or C,` and is an `executable`, I filtered for `.exe` files with names beginning with those letters. I also filtered out processes run by the system account to reduce noise.
-
-I also projected useful columns like the timestamp, file name, folder path, full command line, initiating process, and account name. This gave me a clearer view of how and when the file was run, and which user or process kicked it off. Finally, I sorted the results by time so I could track the earliest suspicious activity and spot anything that looked out of place.
-
-After analysing the results, I noticed that most of the `.exe` files appeared in the `System32` folder, which is expected since it contains core Windows executables. To reduce noise, I decided to exclude system files from the query. Upon further analysis, one file — `BitSentinelCore.exe` — stood out, as it was the only executable found in the `ProgramData` directory. This immediately caught my attention, as `ProgramData` is not a common location for executable files and could indicate suspicious activity.
-
-This thinking helped narrow the results down to a program called `BitSentinelCore.exe`, which appeared to resemble an antivirus solution. One reason this file stood out is that a hint mentioned `"the platform we use in our company,"` which I interpreted as a reference to `Sentinel`. Additionally, the file name starts with the letter `"B,"` aligning with another clue provided in the challenge.
-
-## Earliest File Appearance — Timeline Anchor
-
-I looked for the earliest instance this file appeared in the logs, using it as a reference point to begin establishing a timeline of events.
-
-I ran this query to find the earliest time that `BitSentinelCore.exe` appeared on the `anthony-001` device by checking both process and file events. Since the executable could show up either as a running process or as a file action, I combined data from both tables to get the absolute earliest timestamp across all relevant event types.
-
-<img src="https://i.imgur.com/2f4FEpA.png">
-
-**KQL Query Used:**
-
-```
-let proc = DeviceProcessEvents
-    | where DeviceName == "anthony-001"
-    | where FileName == "BitSentinelCore.exe"
-    | summarize EarliestProcess = min(Timestamp);
-let file = DeviceFileEvents
-    | where DeviceName == "anthony-001"
-    | where FileName == "BitSentinelCore.exe"
-    | summarize EarliestFile = min(Timestamp);
-union
-(
-    proc
-    | project Timestamp = EarliestProcess
-),
-(
-    file
-    | project Timestamp = EarliestFile
-)
-| summarize EarliestAppearance = min(Timestamp)
-```
-
-First time the file was spotted in the logs was: **2025-05-07T02:00:36.794406Z** ⬅️
+[Back to top](#top)
 
 ---
 
-### 📑 Task: What is the name of the antivirus program?
+<a id="flag-1-identify-the-fake-antivirus-program-name"></a>
+## 🎯 Flag-by-Flag Findings
 
-### ✅ Flag 1 Answer: BitSentinelCore.exe
+<a id="flag1"></a>
+### 🚩 Flag 1 — Attacker IP Address
+
+- **Objective:** Identify the external IP that successfully logged in via RDP after repeated failures.  
+- **Finding:** Attacker IP `159.26.106.84`.  
+- **Evidence:** Multiple brute-force attempts observed from the same external IP starting 13 September 2025, with successful login at 2025-09-16T18:40:57.3785102Z on DeviceName containing “flare”.  
+- **Query Used:** (KQL query for DeviceLogonEvents filtered by DeviceName and RemoteIP)
+- **Why this matters:** Multiple failed attempts followed by a success confirms a brute-force or password spray attack, establishing the initial access vector.  
+
+**KQL Query Used:**
+
+```
+DeviceLogonEvents
+| where TimeGenerated > (datetime("2025-09-13))
+| where DeviceName contains "flare"
+| where RemoteIP !in ("","-")
+| where ActionType == ("LogonSuccess")
+| project TimeGenerated, AccountName, ActionType, DeviceName, FailureReason, RemoteIP
+| order by TimeGenerated asc
+```
+<img width="1175" height="184" alt="image" src="https://github.com/user-attachments/assets/ebb1db1b-c4e7-460a-a7b5-8d3127c2a0c8" />
+
+
+[Back to top](#top)
 
 ---
 
