@@ -341,7 +341,7 @@ DeviceNetworkEvents
 - **Evidence:** `curl.exe` POST of `backup_sync.zip` to the external endpoint over unencrypted HTTP.  
 - **Query Used:** (KQL query for DeviceNetworkEvents where ProcessCommandLine contains backup_sync.zip)
 - **Why this matters:** Data was staged and exfiltrated over an unencrypted protocol (T1048.003), confirming successful collection and outbound transfer.  
-- **Flag Answer:**
+- **MITRE Technique:** T1048.003 – Exfiltration Over Unencrypted Protocol
 
 **KQL Query Used:**
 
