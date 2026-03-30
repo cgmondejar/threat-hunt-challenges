@@ -1,6 +1,6 @@
 <a id="top"></a>
 # 🕵️ Pwd Spray to Full Compromise - Threat Hunt Challenge
-***Analyst:*** Chris Mondejar
+***Analyst:*** Chrisvem Mondejar
 
 ## 🌟 Table of Contents 🌟
 
